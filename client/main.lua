@@ -1,5 +1,7 @@
 local config = require 'config.client'
 local sharedConfig = require 'config.shared'
+local isLoggedIn = LocalPlayer.state.isLoggedIn
+local dutyZone, stashZone, garageZone = nil, nil, nil
 
 VehicleStatus = {}
 
@@ -7,14 +9,9 @@ local closestPlate = nil
 local openingDoor = false
 
 -- zone check
-local isInsideDutyZone = false
-local isInsideStashZone = false
-local isInsideGarageZone = false
 local isInsideVehiclePlateZone = false
 local plateZones = {}
 local plateTargetBoxId = 'plateTarget_'
-local dutyTargetBoxId = 'dutyTarget'
-local stashTargetBoxId = 'stashTarget'
 
 -- Exports
 
@@ -40,160 +37,174 @@ exports('GetVehicleStatusList', getVehicleStatusList)
 exports('GetVehicleStatus', getVehicleStatus)
 exports('SetVehicleStatus', setVehicleStatus)
 
-
 -- Functions
-
----@param id string
-local function deleteTarget(id)
+local function getDutyLabelText()
     if config.useTarget then
-        exports['qb-target']:RemoveZone(id)
+        local text = onDuty and Lang:t("labels.clock_out") or Lang:t("labels.clock_in")
+        return text
     else
-        if config.targets[id] and config.targets[id].zone then
-            config.targets[id].zone:destroy()
-        end
-    end
-
-    config.targets[id] = nil
-end
-
-local function registerDutyTarget()
-    local coords = sharedConfig.locations.duty
-    local boxData = config.targets[dutyTargetBoxId] or {}
-
-    if boxData and boxData.created then
-        return
-    end
-
-    if QBX.PlayerData.job.type ~= 'mechanic' then
-        return
-    end
-
-    local label = QBX.PlayerData.job.onduty and Lang:t('labels.sign_off') or Lang:t('labels.sign_in')
-
-    if config.useTarget then
-        exports['qb-target']:AddBoxZone(dutyTargetBoxId, coords, 1.5, 2.5, {
-            name = dutyTargetBoxId,
-            heading = 338.16,
-            debugPoly = config.debugPoly,
-            minZ = coords.z - 1.0,
-            maxZ = coords.z,
-        }, {
-            options = {{
-                type = "server",
-                event = "QBCore:ToggleDuty",
-                label = label,
-                icon = "fa fa-sign-in"
-            }},
-            distance = 2.0
-        })
-
-        config.targets[dutyTargetBoxId] = {created = true}
-    else
-        local zone = BoxZone:Create(coords, 1.5, 1.5, {
-            name = dutyTargetBoxId,
-            heading = 0,
-            debugPoly = config.debugPoly,
-            minZ = coords.z - 1.0,
-            maxZ = coords.z + 1.0,
-        })
-        zone:onPlayerInOut(function (isPointInside)
-            if isPointInside then
-                lib.showTextUI("[E] " .. label, {
-                    position = 'left'
-                })
-            else
-                lib.hideTextUI()
-            end
-
-            isInsideDutyZone = isPointInside
-        end)
-
-        config.targets[dutyTargetBoxId] = {created = true, zone = zone}
+        local text = onDuty and Lang:t("labels.point_clock_out") or Lang:t("labels.point_clock_in")
+        return text
     end
 end
 
-local function registerStashTarget()
-    local coords = sharedConfig.locations.stash
-    local boxData = config.targets[stashTargetBoxId] or {}
-
-    if boxData and boxData.created then
-        return
-    end
-
-    if QBX.PlayerData.job.type ~= 'mechanic' then
-        return
-    end
+local function registerDutyZone()
+    local coords = vector3(sharedConfig.locations.duty.x, sharedConfig.locations.duty.y, sharedConfig.locations.duty.z)
 
     if config.useTarget then
-        exports['qb-target']:AddBoxZone(stashTargetBoxId, coords, 1.0, 1.5, {
-            name = stashTargetBoxId,
-            heading = 248.41,
-            debugPoly = config.debugPoly,
-            minZ = coords.z - 1.0,
-            maxZ = coords.z + 1.0,
-        }, {
-            options = {{
-                type = "client",
-                event = "qb-mechanicjob:client:target:OpenStash",
-                label = Lang:t('labels.o_stash'),
-                icon = 'fa fa-archive'
-            }},
-            distance = 2.0
+        dutyZone = exports.ox_target:addBoxZone({
+            name = 'dutyZoneTarget',
+            coords = coords,
+            rotation = 340.0,
+            size = vec3(3.9, 1.25, 2.3),
+            debug = config.debugPoly,
+            options = {
+                {
+                    icon = 'fa-solid fa-house',
+                    type = 'client',
+                    event = 'qbx_mechanicjob:client:target:toggleDuty',
+                    label = getDutyLabelText(),
+                    distance = 1
+                },
+            },
         })
-
-        config.targets[stashTargetBoxId] = {created = true}
     else
-        local zone = BoxZone:Create(coords, 1.5, 1.5, {
-            name = stashTargetBoxId,
-            heading = 0,
-            debugPoly = config.debugPoly,
-            minZ = coords.z - 1.0,
-            maxZ = coords.z + 1.0,
-        })
-        zone:onPlayerInOut(function (isPointInside)
-            if isPointInside then
-                lib.showTextUI(Lang:t('labels.o_stash'), {
-                    position = 'left'
-                })
-            else
+        dutyZone = lib.zones.box({
+            coords = coords,
+            rotation = 340.0,
+            size = vec3(3.9, 1.25, 2.3),
+            debug = config.debugPoly,
+            onEnter = function()
+                lib.showTextUI(getDutyLabelText())
+            end,
+            onExit = function()
                 lib.hideTextUI()
+            end,
+            inside = function()
+                if IsControlJustPressed(0, 38) then
+                    TriggerEvent('qbx_mechanicjob:client:target:toggleDuty')
+                    lib.hideTextUI()
+                end
             end
-
-            isInsideStashZone = isPointInside
-        end)
-
-        config.targets[stashTargetBoxId] = {created = true, zone = zone}
+        })
     end
+end
+
+local function destroyDutyZone()
+    if not dutyZone then return end
+
+    dutyZone:remove()
+    dutyZone = nil
+end
+
+local function registerStashZone()
+    local coords = vector3(sharedConfig.locations.stash.x, sharedConfig.locations.stash.y, sharedConfig.locations.stash.z)
+
+    if config.useTarget then
+        stashZone = exports.ox_target:addBoxZone({
+            name = 'stashZoneTarget',
+            coords = coords,
+            rotation = 340.0,
+            size = vec3(1.15, 1.6, 2.15),
+            debug = config.debugPoly,
+            options = {
+                {
+                    icon = 'fa fa-archive',
+                    type = 'client',
+                    event = 'qb-mechanicjob:client:target:OpenStash',
+                    label = Lang:t('labels.o_stash'),
+                    distance = 1
+                },
+            },
+        })
+    else
+        stashZone = lib.zones.box({
+            coords = coords,
+            rotation = 340.0,
+            size = vec3(1.15, 1.6, 2.15),
+            debug = config.debugPoly,
+            onEnter = function()
+                lib.showTextUI(Lang:t('labels.o_stash'))
+            end,
+            onExit = function()
+                lib.hideTextUI()
+            end,
+            inside = function()
+                if IsControlJustPressed(0, 38) then
+                    TriggerEvent('qb-mechanicjob:client:target:OpenStash')
+                    lib.hideTextUI()
+                end
+            end
+        })
+    end
+end
+
+local function destroyStashZone()
+    if not stashZone then return end
+
+    stashZone:remove()
+    stashZone = nil
 end
 
 local function registerGarageZone()
-    local coords = sharedConfig.locations.vehicle
-    local vehicleZone = BoxZone:Create(coords.xyz, 5, 15, {
-        name = 'vehicleZone',
-        heading = 340.0,
-        minZ = coords.z - 1.0,
-        maxZ = coords.z + 5.0,
-        debugPoly = config.debugPoly
-    })
+    local coords = vector3(sharedConfig.locations.garage.x, sharedConfig.locations.garage.y,
+        sharedConfig.locations.garage.z)
 
-    vehicleZone:onPlayerInOut(function (isPointInside)
-        if isPointInside and QBX.PlayerData.job.onduty then
-            local inVehicle = cache.vehicle
-            if inVehicle then
-                lib.showTextUI(Lang:t('labels.h_vehicle'), {
-                    position = 'left'
-                })
-            else
-                lib.showTextUI(Lang:t('labels.g_vehicle'), {
-                    position = 'left'
-                })
+    if config.useTarget then
+        garageZone = exports.ox_target:addBoxZone({
+            name = 'stashZoneTarget',
+            coords = coords,
+            rotation = 340.0,
+            size = vec3(16.0, 5.8, 4.0),
+            debug = config.debugPoly,
+            options = {
+                {
+                    icon = 'fa fa-archive',
+                    type = 'client',
+                    event = 'qb-mechanicjob:client:target:OpenStash',
+                    label = Lang:t('labels.o_stash'),
+                    distance = 1
+                },
+            },
+        })
+    else
+        garageZone = lib.zones.box({
+            coords = coords,
+            rotation = 340.0,
+            size = vec3(16.0, 5.8, 4.0),
+            debug = config.debugPoly,
+            onEnter = function()
+                if QBX.PlayerData.job.onduty then
+                    if cache.vehicle then
+                        lib.showTextUI(Lang:t('labels.h_vehicle'))
+                    else
+                        lib.showTextUI(Lang:t('labels.g_vehicle'))
+                    end
+                end
+            end,
+            onExit = function()
+                lib.hideTextUI()
+            end,
+            inside = function()
+                if IsControlJustPressed(0, 38) then
+                    if cache.vehicle then
+                        DeleteVehicle(cache.vehicle)
+                        lib.hideTextUI()
+                    else
+                        lib.showContext('mechanicVehicles')
+                        lib.hideTextUI()
+                    end
+                end
             end
-        else
-            lib.hideTextUI()
-        end
+        })
+    end
+end
 
-        isInsideGarageZone = isPointInside
-    end)
+local function destroyGarageZone()
+    if not garageZone then return end
+
+    garageZone:remove()
+    garageZone = nil
 end
 
 local function destroyVehiclePlateZone(id)
@@ -413,27 +424,34 @@ local function resetClosestVehiclePlate()
     registerVehiclePlateZone(closestPlate, sharedConfig.plates[closestPlate])
 end
 
-local function spawnListVehicle(model)
+local function spawnListVehicle(vehType)
     local coords = {
-        x = sharedConfig.locations.vehicle.x,
-        y = sharedConfig.locations.vehicle.y,
-        z = sharedConfig.locations.vehicle.z,
-        w = sharedConfig.locations.vehicle.w,
+        x = sharedConfig.locations.garage.x,
+        y = sharedConfig.locations.garage.y,
+        z = sharedConfig.locations.garage.z,
+        w = sharedConfig.locations.garage.w,
     }
 
-    local netId = lib.callback.await('qbx_mechanicjob:server:spawnVehicle', false, model, coords, true)
+    local netId = lib.callback.await('qbx_mechanicjob:server:spawnVehicle', false, vehType, coords, Lang:t('labels.mech_plate')..tostring(math.random(1000, 9999)), true)
     local timeout = 100
     while not NetworkDoesEntityExistWithNetworkId(netId) and timeout > 0 do
         Wait(10)
-        timeout -= 1
+        timeout = timeout - 1
     end
-    local veh = NetworkGetEntityFromNetworkId(netId)
-    SetVehicleNumberPlateText(veh, "MECH"..tostring(math.random(1000, 9999)))
-    SetEntityHeading(veh, coords.w)
+    local veh = NetToVeh(netId)
+    if veh == 0 then
+        exports.qbx_core:Notify(Lang:t('error.cant_spawn_vehicle'), 'error')
+        return
+    end
+    local vehClass = GetVehicleClass(veh)
+    if vehClass == 12 then
+        SetVehicleLivery(veh, 2)
+    end
+    SetVehicleFuelLevel(veh, 100.0)
     SetVehicleFuelLevel(veh, 100.0)
     TaskWarpPedIntoVehicle(cache.ped, veh, -1)
-    TriggerEvent("vehiclekeys:client:SetOwner", GetPlate(veh))
     SetVehicleEngineOn(veh, true, true, false)
+    CurrentPlate = GetPlate(veh)
 end
 
 -- Events
@@ -453,23 +471,13 @@ AddEventHandler('QBCore:Client:OnPlayerLoaded', function()
     end)
 end)
 
-RegisterNetEvent('QBCore:Client:OnJobUpdate', function()
-    deleteTarget(dutyTargetBoxId)
-    deleteTarget(stashTargetBoxId)
-    registerDutyTarget()
+RegisterNetEvent('qbx_mechanicjob:client:target:toggleDuty', function()
+    onDuty = not onDuty
 
-    if QBX.PlayerData.job.onduty then
-        registerStashTarget()
-    end
-end)
-
-RegisterNetEvent('QBCore:Client:SetDuty', function()
-    deleteTarget(dutyTargetBoxId)
-    deleteTarget(stashTargetBoxId)
-    registerDutyTarget()
-
-    if QBX.PlayerData.job.onduty then
-        registerStashTarget()
+    if onDuty then
+        exports.qbx_core:Notify(Lang:t("notifications.you_have_been_clocked_in"), 'success')
+    else
+        exports.qbx_core:Notify(Lang:t("notifications.you_have_clocked_out"), 'error')
     end
 end)
 
@@ -645,71 +653,8 @@ AddEventHandler('qb-mechanicjob:client:target:OpenStash', function ()
 end)
 
 -- Threads
-
-local function listenForInteractions()
-    local wait = 500
-    if QBX.PlayerData.job.type ~= 'mechanic' then return wait end
-    local veh = cache.vehicle
-
-    if isInsideDutyZone then
-        wait = 0
-        if IsControlJustPressed(0, 38) then
-            TriggerServerEvent("QBCore:ToggleDuty")
-        end
-    end
-
-    if not QBX.PlayerData.job.onduty then return wait end
-
-    if isInsideStashZone then
-        wait = 0
-        if IsControlJustPressed(0, 38) then
-            TriggerEvent("qb-mechanicjob:client:target:OpenStash")
-        end
-    end
-
-    if isInsideGarageZone then
-        wait = 0
-        if IsControlJustPressed(0, 38) then
-            if veh then
-                DeleteVehicle(veh)
-                lib.hideTextUI()
-            else
-                lib.showContext('mechanicVehicles')
-                lib.hideTextUI()
-            end
-        end
-    end
-
-    if isInsideVehiclePlateZone then
-        wait = 0
-        local attachedVehicle = sharedConfig.plates[closestPlate].AttachedVehicle
-        local coords = sharedConfig.plates[closestPlate].coords
-        if attachedVehicle then
-            if IsControlJustPressed(0, 38) then
-                lib.hideTextUI()
-                lib.showContext('lift')
-            end
-        elseif IsControlJustPressed(0, 38) and veh then
-            DoScreenFadeOut(150)
-            Wait(150)
-            sharedConfig.plates[closestPlate].AttachedVehicle = veh
-            SetEntityCoords(veh, coords.x, coords.y, coords.z, false, false, false, false)
-            SetEntityHeading(veh, coords.w)
-            FreezeEntityPosition(veh, true)
-            Wait(500)
-            DoScreenFadeIn(150)
-            TriggerServerEvent('qb-vehicletuning:server:SetAttachedVehicle', veh, closestPlate)
-
-            destroyVehiclePlateZone(closestPlate)
-            registerVehiclePlateZone(closestPlate, sharedConfig.plates[closestPlate])
-        end
-    end
-
-    return wait
-end
-
 local function createBlip()
-    local blip = AddBlipForCoord(sharedConfig.locations.exit.x, sharedConfig.locations.exit.y, sharedConfig.locations.exit.z)
+    local blip = AddBlipForCoord(sharedConfig.locations.main.x, sharedConfig.locations.main.y, sharedConfig.locations.main.z)
     SetBlipSprite(blip, 446)
     SetBlipDisplay(blip, 4)
     SetBlipScale(blip, 0.7)
@@ -719,24 +664,6 @@ local function createBlip()
     AddTextComponentString(Lang:t('labels.job_blip'))
     EndTextCommandSetBlipName(blip)
 end
-
-CreateThread(function()
-    while not LocalPlayer.state.isLoggedIn do
-        Wait(500)
-    end
-
-    createBlip()
-    registerGarageZone()
-    registerDutyTarget()
-    registerStashTarget()
-    setVehiclePlateZones()
-
-    while true do
-        setClosestPlate()
-        local wait = listenForInteractions()
-        Wait(wait)
-    end
-end)
 
 CreateThread(function()
     while true do
@@ -797,3 +724,34 @@ end
 
 registerLiftMenu()
 registerVehicleListMenu()
+
+local function init()
+    if QBX.PlayerData.job.name == 'mechanic' then
+        createBlip()
+        registerGarageZone()
+        registerDutyZone()
+        registerStashZone()
+        setVehiclePlateZones()
+    end
+end
+
+RegisterNetEvent('QBCore:Client:OnJobUpdate', function()
+    destroyDutyZone()
+    destroyStashZone()
+    destroyGarageZone()
+    init()
+end)
+
+RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
+    isLoggedIn = true
+    init()
+end)
+
+RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
+    isLoggedIn = false
+end)
+
+CreateThread(function()
+    if not isLoggedIn then return end
+    init()
+end)

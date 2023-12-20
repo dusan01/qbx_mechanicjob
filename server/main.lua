@@ -50,9 +50,15 @@ lib.callback.register('qb-vehicletuning:server:GetAttachedVehicle', function()
     return sharedConfig.plates
 end)
 
-lib.callback.register('qbx_mechanicjob:server:spawnVehicle', function(source, vehicleName, vehicleCoords)
-	local netId = SpawnVehicle(source, vehicleName, vehicleCoords, true)
-	return netId
+lib.callback.register('qbx_mechanicjob:server:spawnVehicle', function(source, model, coords, plate)
+    local netId = SpawnVehicle(source, model, coords)
+    if not netId or netId == 0 then return end
+    local veh = NetworkGetEntityFromNetworkId(netId)
+    if not veh or veh == 0 then return end
+    SetEntityHeading(veh, coords.w)
+    SetVehicleNumberPlateText(veh, plate)
+    TriggerClientEvent('vehiclekeys:client:SetOwner', source, plate)
+    return netId
 end)
 
 -- Events

@@ -7,8 +7,10 @@ local Translations = {
         brakes = 'Brakes',
         clutch = 'Clutch',
         fuel = 'Fuel tank',
-        sign_in = 'Sign In',
-        sign_off = 'Sign Off',
+        clock_out = 'Clock Out',
+        point_clock_out = '[E] - Clock Out',
+        clock_in = 'Clock In',
+        point_clock_in = '[E] - Clock In',
         o_stash = '[E] Open Stash',
         h_vehicle = '[E] Hide Vehicle',
         g_vehicle = '[E] Get Vehicle',
@@ -21,6 +23,7 @@ local Translations = {
         status = 'Status',
         vehicle_title = "Vehicle: %{value}",
         vehicle_list = 'Vehicle List',
+        mech_plate = 'MECH'
     },
 
     lift_menu = {
@@ -67,6 +70,8 @@ local Translations = {
         process_canceled = 'Proccess canceled',
         not_part = 'Not a valid part',
         partrep ='The %{value} Is Repaired!',
+        you_have_been_clocked_in = 'You have been clocked in',
+        you_have_clocked_out = 'You have clocked out'
     }
 }
 

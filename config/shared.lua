@@ -48,30 +48,28 @@ return {
     },
     plates = {
         {
-            coords = vec4(-340.95, -128.24, 39, 160.0),
+            coords = vec3(-327.05, -144.6, 39.0),
             boxData = {
-                heading = 340,
-                length = 5,
-                width = 2.5,
+                size = vec3(7.0, 5.15, 5.3),
+                rotation = 340.0,
                 debugPoly = false
             },
             AttachedVehicle = nil,
         },
         {
-            coords = vec4(-327.91, -144.34, 38.86, 70.34),
+            coords = vec3(-340.85, -128.2, 39.0),
             boxData = {
-                heading = 249,
-                length = 6.5,
-                width = 5,
+                size = vec3(3.25, 5.7, 4.7),
+                rotation = 340.0,
                 debugPoly = false
             },
             AttachedVehicle = nil,
         },
     },
     locations = {
-        exit = vec3(-339.04, -135.53, 39.00),
-        duty = vec3(-323.30, -128.79, 39.02),
-        stash = vec3(-319.19, -131.90, 37.98),
-        vehicle = vec4(-370.51, -107.88, 38.35, 72.56),
+        main = vec3(-339.04, -135.53, 39.00),
+        duty = vec3(-323.5, -129.2, 39.0),
+        stash = vec3(-319.05, -131.95, 39.0),
+        garage = vec4(-370.2, -107.8, 39.0, 70.0),
     }
 }
